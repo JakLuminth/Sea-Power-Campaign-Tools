@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "campaign": {
+    "id": "example-campaign",
+    "displayName": "Example Campaign",
+    "root": "../mod/campaigns/example-campaign",
+    "metadata": "../mod/_info.ini",
+    "campaignsRoot": "../mod/campaigns",
+    "ini": "campaign.ini"
+  },
+  "locales": ["en"],
+  "briefing": {
+    "content": "briefing_content.json",
+    "pathPattern": "campaigns/{campaignId}/missions/{stem}_briefing/BriefingText_{locale}.xml",
+    "requiredFields": ["title", "description", "situation", "mission", "execution", "roe", "friendly", "support"],
+    "requiredHeadings": {"en": ["SITUATION", "MISSION", "EXECUTION", "RULES OF ENGAGEMENT", "FRIENDLY FORCES", "SUPPORT"]},
+    "labels": {"en": {"brief": "MISSION BRIEF", "footer": "FOLLOW TASKING", "situation": "SITUATION", "mission": "MISSION", "execution": "EXECUTION", "roe": "RULES OF ENGAGEMENT", "friendly": "FRIENDLY FORCES", "support": "SUPPORT"}},
+    "branding": {"header": "EXAMPLE CAMPAIGN"}
+  }
+}

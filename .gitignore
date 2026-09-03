@@ -1,0 +1,4 @@
+Player.log
+ScriptEngine.log
+*.log
+*.tmp

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/JakLuminth/Sea-Power-Campaign-Tools/schema/campaign-manifest.schema.json",
+  "title": "Sea Power Campaign Tools manifest",
+  "type": "object",
+  "required": ["schemaVersion", "campaign", "locales", "briefing"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "campaign": {
+      "type": "object",
+      "required": ["id", "root"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "displayName": {"type": "string", "minLength": 1},
+        "root": {"type": "string", "minLength": 1},
+        "metadata": {"type": "string", "minLength": 1},
+        "campaignsRoot": {"type": "string", "minLength": 1},
+        "ini": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "locales": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+    "briefing": {
+      "type": "object",
+      "required": ["content", "requiredFields", "requiredHeadings", "labels"],
+      "properties": {
+        "content": {"type": "string", "minLength": 1},
+        "pathPattern": {"type": "string", "minLength": 1},
+        "requiredFields": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+        "requiredHeadings": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string", "minLength": 1}}},
+        "labels": {"type": "object", "additionalProperties": {"type": "object", "required": ["brief", "footer"], "additionalProperties": {"type": "string"}}},
+        "branding": {"type": "object", "additionalProperties": true}
+      },
+      "additionalProperties": true
+    },
+    "validation": {"type": "object", "additionalProperties": true}
+  },
+  "additionalProperties": true
+}
