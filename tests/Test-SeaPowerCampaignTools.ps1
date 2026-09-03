@@ -297,6 +297,22 @@ try {
         Assert-True ($result.ExitCode -eq 0) ("Expected the authored campaign to validate, but it exited {0}.`n{1}" -f $result.ExitCode, $result.Output)
     }
 
+    $operationPolicies = Get-ManifestMap $manifest.Validation 'operations'
+    if ((Get-ManifestValue $operationPolicies 'verticalSlice') -ne $null) {
+        Invoke-Test 'vertical-slice validation uses manifest selection' {
+            $fixture = New-Fixture 'vertical-slice'
+            $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', (Get-FixtureConfig $fixture), '-GameRoot', '', '-VerticalSlice')
+            Assert-True ($result.ExitCode -eq 0) ("Manifest vertical-slice validation failed.`n{0}" -f $result.Output)
+        }
+    }
+    if ((Get-ManifestValue $operationPolicies 'implemented') -ne $null) {
+        Invoke-Test 'implemented validation uses manifest selection' {
+            $fixture = New-Fixture 'implemented'
+            $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', (Get-FixtureConfig $fixture), '-GameRoot', '', '-Implemented')
+            Assert-True ($result.ExitCode -eq 0) ("Manifest implemented validation failed.`n{0}" -f $result.Output)
+        }
+    }
+
     Invoke-Test 'missing briefing asset' {
         $fixture = New-Fixture 'missing-briefing'
         $brief = Join-Path $fixture $firstBriefingRelative

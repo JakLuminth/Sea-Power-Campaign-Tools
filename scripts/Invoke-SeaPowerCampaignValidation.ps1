@@ -56,16 +56,23 @@ function Convert-CampaignPath([string]$Path, [string]$Root) {
     # references before they are checked.
     if ([System.IO.Path]::IsPathRooted($normalized) -or $normalized -match '^[A-Za-z]:') { return $null }
     if ($normalized -match '[\x00-\x1F]') { return $null }
+    $prefixes = [System.Collections.Generic.List[string]]::new()
+    $campaignsRootReference = $manifest.CampaignsRootRelative.Replace('/', '\').Trim('\')
+    # Game campaign references omit leading package traversal segments.  Derive
+    # the usable package-relative prefixes from campaignsRoot instead of baking
+    # a particular repository layout into the toolkit.
+    while ($campaignsRootReference.StartsWith('.\', [System.StringComparison]::Ordinal) -or $campaignsRootReference.StartsWith('..\', [System.StringComparison]::Ordinal)) {
+        $stripLength = if ($campaignsRootReference.StartsWith('..\', [System.StringComparison]::Ordinal)) { 3 } else { 2 }
+        $campaignsRootReference = $campaignsRootReference.Substring($stripLength)
+    }
+    if (-not [string]::IsNullOrWhiteSpace($campaignsRootReference)) {
+        [void]$prefixes.Add('.\' + $campaignsRootReference + '\')
+        [void]$prefixes.Add($campaignsRootReference + '\')
+    }
     $campaignSegment = [System.IO.Path]::GetFileName($manifest.CampaignsRoot.TrimEnd('\'))
     if ([string]::IsNullOrWhiteSpace($campaignSegment)) { $campaignSegment = 'campaigns' }
-    # Parenthesize concatenations so PowerShell does not fold the comma-separated
-    # expressions into one array/string value.
-    $prefixes = @(
-        ('.\' + $campaignSegment + '\')
-        ($campaignSegment + '\')
-        '.\mod\campaigns\'
-        'mod\campaigns\'
-    )
+    [void]$prefixes.Add('.\' + $campaignSegment + '\')
+    [void]$prefixes.Add($campaignSegment + '\')
     $relative = $null
     foreach ($prefix in $prefixes) {
         if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -472,7 +479,9 @@ foreach ($sectionName in (Get-SectionNames $campaignIni '^Mission\d+$')) {
     $type = Get-IniValue $block 'Type'
     $sequence = Get-IniValue $block 'MissionSequenceName_en'
     $fileValue = Get-IniValue $block 'MissionFile'
-    $optional = ($sequence -match '(?i)OPTIONAL' -or $fileValue -match '(?i)(^|[\\/])O\d')
+    $stem = if ($fileValue) { [System.IO.Path]::GetFileNameWithoutExtension($fileValue.Replace('/', '\')) } else { '' }
+    $optionalStemPattern = [string](Get-ManifestValue $missionRules 'optionalStemPattern' '^(?i)o\d')
+    $optional = ($sequence -match '(?i)OPTIONAL' -or $stem -match $optionalStemPattern)
     [void]$missionRecords.Add([pscustomobject]@{
         Id = $number
         Section = $sectionName
@@ -480,7 +489,7 @@ foreach ($sectionName in (Get-SectionNames $campaignIni '^Mission\d+$')) {
         Type = $type
         Sequence = $sequence
         Optional = $optional
-        Stem = if ($fileValue) { [System.IO.Path]::GetFileNameWithoutExtension($fileValue.Replace('/', '\')) } else { '' }
+        Stem = $stem
         MissionFileValue = $fileValue
         MissionFile = $null
     })
@@ -561,7 +570,7 @@ if ($forbidOptionalAncestor) {
 }
 
 $selectedRecords = @($missionRecords | Where-Object {
-    $modeRules = if ($VerticalSlice) { Get-ManifestMap $validation 'verticalSlice' } elseif ($Implemented) { Get-ManifestMap $validation 'implemented' } else { $null }
+    $modeRules = if ($VerticalSlice) { Get-ManifestMap $operationRules 'verticalSlice' } elseif ($Implemented) { Get-ManifestMap $operationRules 'implemented' } else { $null }
     if ($null -ne $modeRules) {
         $ids = @(Get-ManifestList $modeRules 'missionIds')
         if ($ids.Count -gt 0) { $_.Id -in $ids } else { $_.Type -eq 'Mission' }
@@ -647,7 +656,7 @@ foreach ($file in $allMissionFiles) {
         $briefingValue = Get-IniValue $language 'MissionBriefingLeftPane'
         if ([string]::IsNullOrWhiteSpace($briefingValue)) { continue }
         $expected = Expand-CampaignPathPattern $briefingPathPattern $manifest.CampaignId $stem $locale
-        if ($briefingValue.Replace('\\', '/') -ine $expected.Replace('\\', '/')) { Add-Failure "$stem briefing for $locale references an unexpected operation or locale." }
+        if ($briefingValue.Replace('\', '/') -ine $expected.Replace('\', '/')) { Add-Failure "$stem briefing for $locale references an unexpected operation or locale." }
         $briefingPath = Convert-CampaignPath $briefingValue $repo
         if ($null -eq $briefingPath) { Add-Failure "$stem briefing for $locale has an invalid campaign path."; continue }
         if (-not (Require-File $briefingPath "$stem briefing $locale")) { continue }
