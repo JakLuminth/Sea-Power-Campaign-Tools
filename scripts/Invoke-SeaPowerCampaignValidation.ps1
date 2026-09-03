@@ -423,6 +423,11 @@ $forbidOptionalAncestor = [bool](Get-ManifestValue $graphRules 'forbidOptionalAn
 $requireOptionalExpiry = [bool](Get-ManifestValue $graphRules 'requireExpiryForOptional' $true)
 $unitIdValidationEnabled = [bool](Get-ManifestValue $unitIdRules 'enabled' $true)
 $unitIdOriginalRoot = [string](Get-ManifestValue $unitIdRules 'originalRoot' 'Sea Power_Data/StreamingAssets/original')
+if ([string]::IsNullOrWhiteSpace($unitIdOriginalRoot)) { $unitIdOriginalRoot = 'Sea Power_Data/StreamingAssets/original' }
+else {
+    $unitIdOriginalRoot = $unitIdOriginalRoot.Replace('/', '\')
+    if ([System.IO.Path]::IsPathRooted($unitIdOriginalRoot) -or ($unitIdOriginalRoot -split '\\' | Where-Object { $_ -in @('.', '..') })) { Add-Failure 'Manifest unitIds.originalRoot must be a relative path without traversal.' }
+}
 $minimumDynamicUnits = [int](Get-ManifestValue $unitRules 'dynamicAnchorMinUnits' 1)
 $maximumDynamicUnits = [int](Get-ManifestValue $unitRules 'dynamicAnchorMaxUnits' 1)
 $mainSequencePattern = [string](Get-ManifestValue $missionRules 'mainSequencePattern' '^MISSION\s+(\d+)$')
@@ -435,7 +440,7 @@ $legacyEnemyRosterValue = [string](Get-ManifestValue $validation 'enemyRoster' '
 $enemyRosterValue = [string](Get-ManifestValue $dynamicRosterRules 'path' $legacyEnemyRosterValue)
 $requireEnemyRoster = [bool](Get-ManifestValue $dynamicRosterRules 'required' ($false -or [bool]$enemyRosterValue))
 $enemyRosterPath = if ($enemyRosterValue) { Resolve-ManifestPath $enemyRosterValue $manifest.ManifestDirectory $repo } else { Join-Path $campaignRoot 'enemy_theater_roster.ini' }
-if ($requireEnemyRoster -and $null -eq $enemyRosterPath) { Add-Failure 'Configured enemy DUG roster path is invalid.' }
+if ($enemyRosterValue -and $null -eq $enemyRosterPath) { Add-Failure 'Configured enemy DUG roster path is invalid.' }
 $enemyRosterIni = if ($null -ne $enemyRosterPath -and (Test-Path -LiteralPath $enemyRosterPath -PathType Leaf)) { Read-IniFile $enemyRosterPath } else { $null }
 if ($requireEnemyRoster -and $null -eq $enemyRosterIni) { [void](Require-File $enemyRosterPath 'enemy DUG roster') }
 $formationDefinitions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
@@ -1064,7 +1069,8 @@ foreach ($info in $operationInfos) {
 # pass through a locale dependent conversion.  The manifest controls optional
 # date bounds and the sequence after which extended environment fields apply.
 # Weather is intentionally descriptive and is not a required field.
-foreach ($info in $mainOperations) {
+$environmentOperations = @($operationInfos | Where-Object { $null -ne $_.Record -and $_.Record.Type -eq 'Mission' })
+foreach ($info in $environmentOperations) {
     $ini = $info.Ini
     $label = $info.Stem
     $environment = $ini.Sections['Environment']
@@ -1220,5 +1226,5 @@ if ($failures.Count -gt 0) {
     Write-Error ("FAILED with {0} issue(s):`n - {1}" -f $failures.Count, ($failures -join "`n - "))
     exit 1
 }
-Write-Output 'PASS: authored-linear graph, locale parity, briefing/event XML, environments, map-marker geometry, trigger and zone references, persistent submarine roster, mission-relative DUG rosters, DUG anchors, variables, and installed IDs.'
+Write-Output 'PASS: authored campaign graph, locale parity, briefing/event XML, environments, map-marker geometry, trigger and zone references, persistent player roster, mission-relative dynamic rosters, dynamic anchors, variables, and installed IDs.'
 exit 0

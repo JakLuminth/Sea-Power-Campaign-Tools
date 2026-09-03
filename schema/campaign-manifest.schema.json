@@ -80,7 +80,14 @@
           "additionalProperties": true
         },
         "variables": {"type": "object", "additionalProperties": true},
-        "unitIds": {"type": "object", "additionalProperties": true},
+        "unitIds": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "originalRoot": {"type": "string", "minLength": 1}
+          },
+          "additionalProperties": true
+        },
         "inventory": {"type": "object", "additionalProperties": true}
       },
       "additionalProperties": true
