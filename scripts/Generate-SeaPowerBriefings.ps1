@@ -18,7 +18,12 @@ $CampaignRoot = $manifest.CampaignRoot
 
 $locales = @($manifest.Locales)
 $requiredFields = @($manifest.RequiredBriefingFields)
+$sectionFields = @($manifest.BriefingSectionFields)
 $contentPath = $manifest.BriefingContentPath
+$xamlRules = Get-ManifestMap $manifest.Briefing 'xaml'
+$briefingRootName = [string](Get-ManifestValue $xamlRules 'briefingRoot' 'Grid')
+$presentationNamespace = [string](Get-ManifestValue $xamlRules 'presentationNamespace' 'http://schemas.microsoft.com/winfx/2006/xaml/presentation')
+$xamlNamespace = [string](Get-ManifestValue $xamlRules 'xamlNamespace' 'http://schemas.microsoft.com/winfx/2006/xaml')
 
 function Fail([string]$Message) { throw "Briefing content error: $Message" }
 
@@ -74,6 +79,7 @@ function Validate-ContentData([object]$Data) {
         $file = [string](Get-Node $record 'file')
         $code = [string](Get-Node $record 'code')
         if (-not (Test-NonEmptyString $file)) { Fail "mission $($i + 1) is missing file" }
+        if ($file -notmatch '^[^\\/:*?"<>|\x00-\x1F]+$' -or $file -in @('.', '..')) { Fail "mission $file has an unsafe file stem" }
         if (-not (Test-NonEmptyString $code)) { Fail "mission $file is missing code" }
         if (-not $seenFiles.Add($file)) { Fail "duplicate mission file '$file'" }
         if (-not $seenCodes.Add($code)) { Fail "duplicate mission code '$code'" }
@@ -123,9 +129,12 @@ function New-BriefingXml([object]$Node, [string]$Locale) {
     $campaignName = (Escape-Xaml $headerValue).Replace('&apos;', "'")
     $briefHeading = Escape-Xaml (Get-Heading $Locale 'brief')
     $footer = Escape-Xaml (Get-Heading $Locale 'footer')
+    $rowDefinitions = [System.Collections.Generic.List[string]]::new()
+    for ($row = 0; $row -lt $sectionFields.Count; $row++) { [void]$rowDefinitions.Add('      <RowDefinition Height="Auto" />') }
+    $rowDefinitionText = $rowDefinitions -join "`n"
     $cards = [System.Collections.Generic.List[string]]::new()
     $cardIndex = 0
-    foreach ($field in @('situation', 'mission', 'execution', 'roe', 'friendly', 'support')) {
+    foreach ($field in $sectionFields) {
         $heading = Escape-Xaml (Get-Heading $Locale $field)
         $value = Escape-Xaml (Get-Text $Node $field)
         $background = if (($cardIndex % 2) -eq 0) { '#142630' } else { '#10212A' }
@@ -140,7 +149,7 @@ function New-BriefingXml([object]$Node, [string]$Locale) {
 
     $cardText = $cards -join "`n"
     $xml = @"
-<Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#101922" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+<$briefingRootName xmlns="$presentationNamespace" xmlns:x="$xamlNamespace" Background="#101922" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
   <Grid.RowDefinitions>
     <RowDefinition Height="Auto" />
     <RowDefinition Height="Auto" />
@@ -165,19 +174,14 @@ function New-BriefingXml([object]$Node, [string]$Locale) {
   </Border>
   <Grid Grid.Row="2" Margin="8,0,8,0">
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
-      <RowDefinition Height="Auto" />
+$rowDefinitionText
     </Grid.RowDefinitions>
 $cardText
   </Grid>
   <Border Grid.Row="3" Background="#193644" BorderBrush="#2C5668" BorderThickness="1" Padding="12,8" Margin="8,4,8,8">
     <TextBlock Text="$footer" FontSize="12" Foreground="#A9BBC4" TextWrapping="Wrap" />
   </Border>
-</Grid>
+</$briefingRootName>
 "@
     # Generated assets use LF consistently, independent of the checkout's
     # PowerShell script line-ending convention.
@@ -276,7 +280,11 @@ function Test-TextSemantics([object]$Record, [object]$Node, [string]$Locale, [st
     $document.XmlResolver = $null
     $document.LoadXml($Xml)
     $plainText = $document.DocumentElement.InnerText
-    foreach ($field in @('situation', 'mission', 'execution', 'roe', 'friendly', 'support')) {
+    $requiredHeadings = @(Get-ManifestValue $manifest.RequiredBriefingHeadings $Locale)
+    foreach ($heading in $requiredHeadings) {
+        if ($plainText.IndexOf([string]$heading, [System.StringComparison]::Ordinal) -lt 0) { Fail "$($Record.file) $Locale briefing misses required heading '$heading'" }
+    }
+    foreach ($field in $sectionFields) {
         $heading = Get-Heading $Locale $field
         if ($plainText.IndexOf($heading, [System.StringComparison]::Ordinal) -lt 0) { Fail "$($Record.file) $Locale briefing misses heading '$heading'" }
         $value = Get-Text $Node $field

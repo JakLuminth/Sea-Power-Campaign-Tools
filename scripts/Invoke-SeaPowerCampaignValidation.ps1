@@ -285,8 +285,8 @@ function Get-XmlDocument([string]$Path, [string]$Description) {
 function Test-XamlDocument([System.Xml.XmlDocument]$Document, [string]$Path, [string]$Description, [string]$RootName) {
     if ($null -eq $Document -or $null -eq $Document.DocumentElement) { return $false }
     $root = $Document.DocumentElement
-    $presentationNamespace = 'http://schemas.microsoft.com/winfx/2006/xaml/presentation'
-    $xamlNamespace = 'http://schemas.microsoft.com/winfx/2006/xaml'
+    $presentationNamespace = if ($script:xamlPresentationNamespace) { $script:xamlPresentationNamespace } else { 'http://schemas.microsoft.com/winfx/2006/xaml/presentation' }
+    $xamlNamespace = if ($script:xamlNamespace) { $script:xamlNamespace } else { 'http://schemas.microsoft.com/winfx/2006/xaml' }
     $valid = $true
     if ($root.LocalName -ne $RootName) { Add-Failure "$Description must use <$RootName> as its root: $Path"; $valid = $false }
     if ($root.NamespaceURI -ne $presentationNamespace) { Add-Failure "$Description has the wrong presentation namespace: $Path"; $valid = $false }
@@ -318,23 +318,27 @@ function Test-ContiguousSections([object]$Ini, [string]$PrefixPattern, [int]$Exp
 
 function Get-UnitSectionPattern([string]$Key) {
     switch -Regex ($Key) {
-        '^NumberOfTaskforce(\d+)Submarines$' { return '^Taskforce' + $Matches[1] + 'Submarine' }
-        '^NumberOfTaskforce(\d+)Vessels$' { return '^Taskforce' + $Matches[1] + 'Vessel' }
-        '^NumberOfTaskforce(\d+)Aircraft$' { return '^Taskforce' + $Matches[1] + 'Aircraft' }
-        '^NumberOfTaskforce(\d+)LandUnits$' { return '^Taskforce' + $Matches[1] + 'LandUnit' }
         '^NumberOfNeutralVessels$' { return '^NeutralVessel' }
         '^NumberOfNeutralBiologics$' { return '^NeutralBiologic' }
+        '^NumberOf(.+)Submarines$' { return '^' + [regex]::Escape($Matches[1]) + 'Submarine' }
+        '^NumberOf(.+)Vessels$' { return '^' + [regex]::Escape($Matches[1]) + 'Vessel' }
+        '^NumberOf(.+)Aircraft$' { return '^' + [regex]::Escape($Matches[1]) + 'Aircraft' }
+        '^NumberOf(.+)LandUnits$' { return '^' + [regex]::Escape($Matches[1]) + 'LandUnit' }
         default { return $null }
     }
 }
 
 function Get-UnitSectionNames([object]$Ini) {
-    return @(Get-SectionNames $Ini '^(?:Taskforce\d+(?:Submarine|Vessel|Aircraft|LandUnit)|Neutral(?:Vessel|Biologic))\d+$')
+    $taskforces = @($script:playerTaskforceName, $script:enemyTaskforceName) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+    $taskforcePattern = if ($taskforces.Count -gt 0) { ($taskforces | ForEach-Object { [regex]::Escape([string]$_) }) -join '|' } else { 'Taskforce\d+' }
+    return @(Get-SectionNames $Ini ('^(?:' + $taskforcePattern + ')(?:Submarine|Vessel|Aircraft|LandUnit)\d+$|^Neutral(?:Vessel|Biologic)\d+$'))
 }
 
 function Get-UnitTokens([string]$Text) {
     if ([string]::IsNullOrWhiteSpace($Text)) { return @() }
-    $pattern = '(?<![A-Za-z0-9_])(?:Taskforce\d+(?:Submarine|Vessel|Aircraft|LandUnit)\d+|Neutral(?:Vessel|Biologic)\d+)(?![A-Za-z0-9_])'
+    $taskforces = @($script:playerTaskforceName, $script:enemyTaskforceName) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique
+    $taskforcePattern = if ($taskforces.Count -gt 0) { ($taskforces | ForEach-Object { [regex]::Escape([string]$_) }) -join '|' } else { 'Taskforce\d+' }
+    $pattern = '(?<![A-Za-z0-9_])(?:(?:' + $taskforcePattern + ')(?:Submarine|Vessel|Aircraft|LandUnit)\d+|Neutral(?:Vessel|Biologic)\d+)(?![A-Za-z0-9_])'
     return @([regex]::Matches($Text, $pattern) | ForEach-Object { $_.Value })
 }
 
@@ -343,6 +347,16 @@ function Get-MissionSequenceNumber([string]$Sequence) {
     $match = [regex]::Match($Sequence, '(?i)' + $pattern + '\s*$')
     if ($match.Success) { return [int]$match.Groups[1].Value }
     return $null
+}
+
+function Convert-ManifestDateBoundary([object]$Value, [string]$Name) {
+    if ($null -eq $Value -or [string]::IsNullOrWhiteSpace([string]$Value)) { return $null }
+    $parsed = [datetime]::MinValue
+    if (-not [datetime]::TryParseExact([string]$Value, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::None, [ref]$parsed)) {
+        Add-Failure "Manifest $Name must use yyyy-MM-dd; found '$Value'."
+        return $null
+    }
+    return $parsed.Date
 }
 
 function Is-OptionalMission([object]$Record) {
@@ -357,12 +371,20 @@ $campaignPath = $manifest.CampaignIni
 $campaignsRoot = $manifest.CampaignsRoot
 $locales = @($manifest.Locales)
 $requiredBriefingHeadings = Get-ManifestMap $manifest.Briefing 'requiredHeadings'
+$xamlRules = Get-ManifestMap $manifest.Briefing 'xaml'
+$briefingRootName = [string](Get-ManifestValue $xamlRules 'briefingRoot' 'Grid')
+$eventRootName = [string](Get-ManifestValue $xamlRules 'eventRoot' 'Page')
+$script:xamlPresentationNamespace = [string](Get-ManifestValue $xamlRules 'presentationNamespace' 'http://schemas.microsoft.com/winfx/2006/xaml/presentation')
+$script:xamlNamespace = [string](Get-ManifestValue $xamlRules 'xamlNamespace' 'http://schemas.microsoft.com/winfx/2006/xaml')
 $validation = $manifest.Validation
 $campaignRules = Get-ManifestMap $validation 'campaign'
+$graphRules = Get-ManifestMap $validation 'graph'
+$dynamicRosterRules = Get-ManifestMap $validation 'dynamicRoster'
 $missionRules = Get-ManifestMap $validation 'missions'
 $operationRules = Get-ManifestMap $validation 'operations'
 $unitRules = Get-ManifestMap $validation 'units'
 $environmentRules = Get-ManifestMap $validation 'environment'
+$unitIdRules = Get-ManifestMap $validation 'unitIds'
 $variableRules = Get-ManifestMap $validation 'variables'
 $inventoryRules = Get-ManifestMap $validation 'inventory'
 $expectedMissionCount = [int](Get-ManifestValue $campaignRules 'missionCount' 0)
@@ -371,6 +393,9 @@ $campaignLength = [string](Get-ManifestValue $campaignRules 'length' '')
 $missionSectionCount = [string](Get-ManifestValue $campaignRules 'numberOfMissions' '')
 $playerTaskforceName = [string](Get-ManifestValue $unitRules 'playerTaskforce' 'Taskforce1')
 $enemyTaskforceName = [string](Get-ManifestValue $unitRules 'enemyTaskforce' 'Taskforce2')
+$taskforceNamePattern = (@($playerTaskforceName, $enemyTaskforceName) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique | ForEach-Object { [regex]::Escape([string]$_) }) -join '|'
+if ([string]::IsNullOrWhiteSpace($taskforceNamePattern)) { $taskforceNamePattern = 'Taskforce\d+' }
+$unitCountKeyPattern = '^\s*(NumberOf(?:(?:' + $taskforceNamePattern + ')(?:Submarines|Vessels|Aircraft|LandUnits)|Neutral(?:Vessels|Biologics)))\s*=\s*(.*)$'
 $playerUnitPrefix = [string](Get-ManifestValue $unitRules 'playerUnitPrefix' ($playerTaskforceName))
 $enemyUnitPrefix = [string](Get-ManifestValue $unitRules 'enemyUnitPrefix' ($enemyTaskforceName))
 $playerSubmarinePattern = [string](Get-ManifestValue $unitRules 'playerSubmarinePattern' '^Taskforce1Submarine\d+$')
@@ -378,11 +403,19 @@ $playerSubmarineTypePattern = [string](Get-ManifestValue $unitRules 'playerSubma
 $playerDeploymentZone = [string](Get-ManifestValue $unitRules 'playerDeploymentZone' 'Zone_PlayerDeployment')
 $playerObjectivesSection = [string](Get-ManifestValue $unitRules 'playerObjectivesSection' ($playerTaskforceName + '_Objectives'))
 $dynamicRosterKey = [string](Get-ManifestValue $unitRules 'dynamicRosterKey' 'Taskforce2RosterFile')
-$dynamicFormationPrefix = [string](Get-ManifestValue $unitRules 'formationPrefix' 'Formation_')
 $replenishSequences = @(Get-ManifestList $unitRules 'replenishSequences')
 $persistentSlotRules = @(Get-ManifestList $unitRules 'persistentSlotRules')
 $variablePattern = [string](Get-ManifestValue $variableRules 'namePattern' '^[A-Za-z][A-Za-z0-9_]*$')
 $environmentExtendedAfterSequence = Get-ManifestValue $environmentRules 'extendedAfterSequence' 3
+$environmentDateBounds = Get-ManifestMap $environmentRules 'dateBounds'
+$minimumEnvironmentDate = Convert-ManifestDateBoundary (Get-ManifestValue $environmentDateBounds 'min' (Get-ManifestValue $environmentDateBounds 'start')) 'environment.dateBounds.min'
+$maximumEnvironmentDate = Convert-ManifestDateBoundary (Get-ManifestValue $environmentDateBounds 'max' (Get-ManifestValue $environmentDateBounds 'end')) 'environment.dateBounds.max'
+if ($null -ne $minimumEnvironmentDate -and $null -ne $maximumEnvironmentDate -and $minimumEnvironmentDate -gt $maximumEnvironmentDate) { Add-Failure 'Manifest environment.dateBounds.min must not be later than max.' }
+$requireAcyclicGraph = [bool](Get-ManifestValue $graphRules 'requireAcyclic' $true)
+$forbidOptionalAncestor = [bool](Get-ManifestValue $graphRules 'forbidOptionalAncestorForMain' $true)
+$requireOptionalExpiry = [bool](Get-ManifestValue $graphRules 'requireExpiryForOptional' $true)
+$unitIdValidationEnabled = [bool](Get-ManifestValue $unitIdRules 'enabled' $true)
+$unitIdOriginalRoot = [string](Get-ManifestValue $unitIdRules 'originalRoot' 'Sea Power_Data/StreamingAssets/original')
 $minimumDynamicUnits = [int](Get-ManifestValue $unitRules 'dynamicAnchorMinUnits' 1)
 $maximumDynamicUnits = [int](Get-ManifestValue $unitRules 'dynamicAnchorMaxUnits' 1)
 $mainSequencePattern = [string](Get-ManifestValue $missionRules 'mainSequencePattern' '^MISSION\s+(\d+)$')
@@ -391,15 +424,17 @@ $briefingPathPattern = [string](Get-ManifestValue $manifest.Briefing 'pathPatter
 
 if (-not (Require-File $campaignPath 'campaign definition')) { exit 1 }
 if (-not (Require-File $manifest.MetadataPath 'mod metadata')) { exit 1 }
-$enemyRosterValue = [string](Get-ManifestValue $validation 'enemyRoster' '')
-$requireEnemyRoster = [bool](Get-ManifestValue $validation 'requireEnemyRoster' ($false -or [bool]$enemyRosterValue))
+$legacyEnemyRosterValue = [string](Get-ManifestValue $validation 'enemyRoster' '')
+$enemyRosterValue = [string](Get-ManifestValue $dynamicRosterRules 'path' $legacyEnemyRosterValue)
+$requireEnemyRoster = [bool](Get-ManifestValue $dynamicRosterRules 'required' ($false -or [bool]$enemyRosterValue))
 $enemyRosterPath = if ($enemyRosterValue) { Resolve-ManifestPath $enemyRosterValue $manifest.ManifestDirectory $repo } else { Join-Path $campaignRoot 'enemy_theater_roster.ini' }
 if ($requireEnemyRoster -and $null -eq $enemyRosterPath) { Add-Failure 'Configured enemy DUG roster path is invalid.' }
 $enemyRosterIni = if ($null -ne $enemyRosterPath -and (Test-Path -LiteralPath $enemyRosterPath -PathType Leaf)) { Read-IniFile $enemyRosterPath } else { $null }
 if ($requireEnemyRoster -and $null -eq $enemyRosterIni) { [void](Require-File $enemyRosterPath 'enemy DUG roster') }
 $formationDefinitions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-foreach ($formationSection in (Get-SectionNames $enemyRosterIni ([string](Get-ManifestValue $unitRules 'formationSectionPattern' '^Formation_.+')))) {
-    $formationPrefix = [string](Get-ManifestValue $unitRules 'formationPrefix' 'Formation_')
+$formationSectionPattern = [string](Get-ManifestValue $dynamicRosterRules 'formationSectionPattern' (Get-ManifestValue $unitRules 'formationSectionPattern' '^Formation_.+'))
+$formationPrefix = [string](Get-ManifestValue $dynamicRosterRules 'formationPrefix' (Get-ManifestValue $unitRules 'formationPrefix' 'Formation_'))
+foreach ($formationSection in (Get-SectionNames $enemyRosterIni $formationSectionPattern)) {
     [void]$formationDefinitions.Add($formationSection.Substring($formationPrefix.Length))
 }
 
@@ -479,7 +514,7 @@ foreach ($record in $missionRecords) {
             if ($expiryId -eq $record.Id) { Add-Failure "Mission$($record.Id) expiry cannot reference itself." }
             if (-not $recordById.ContainsKey($expiryId)) { Add-Failure "Mission$($record.Id) expiry references missing Mission$expiryId." }
         }
-    } elseif ($record.Type -eq 'Mission' -and (Is-OptionalMission $record)) {
+    } elseif ($requireOptionalExpiry -and $record.Type -eq 'Mission' -and (Is-OptionalMission $record)) {
         Add-Failure "Optional Mission$($record.Id) must declare ExpiresAfterMissionComplete."
     }
     foreach ($parentId in $parentIds) {
@@ -498,7 +533,9 @@ function Visit-CampaignNode([int]$Id, [hashtable]$Graph, [hashtable]$State) {
     $State[$Id] = 2
 }
 $visitState = @{}
-foreach ($record in $missionRecords) { Visit-CampaignNode $record.Id $parentsById $visitState }
+if ($requireAcyclicGraph) {
+    foreach ($record in $missionRecords) { Visit-CampaignNode $record.Id $parentsById $visitState }
+}
 
 function Test-OptionalAncestor([int]$Id, [hashtable]$Graph, [hashtable]$Optional, [hashtable]$Memo, [hashtable]$Path) {
     if ($Memo.ContainsKey($Id)) { return [bool]$Memo[$Id] }
@@ -514,10 +551,12 @@ function Test-OptionalAncestor([int]$Id, [hashtable]$Graph, [hashtable]$Optional
 }
 $optionalById = @{}
 foreach ($record in $missionRecords) { $optionalById[$record.Id] = (Is-OptionalMission $record) }
-$optionalMemo = @{}
-foreach ($record in $missionRecords) {
-    if ($record.Type -eq 'Mission' -and -not $optionalById[$record.Id] -and (Test-OptionalAncestor $record.Id $parentsById $optionalById $optionalMemo @{})) {
-        Add-Failure "Main Mission$($record.Id) is gated by an optional mission ancestor."
+if ($forbidOptionalAncestor) {
+    $optionalMemo = @{}
+    foreach ($record in $missionRecords) {
+        if ($record.Type -eq 'Mission' -and -not $optionalById[$record.Id] -and (Test-OptionalAncestor $record.Id $parentsById $optionalById $optionalMemo @{})) {
+            Add-Failure "Main Mission$($record.Id) is gated by an optional mission ancestor."
+        }
     }
 }
 
@@ -550,7 +589,7 @@ foreach ($record in $selectedRecords) {
             if (Require-File $eventPath "Mission$($record.Id) event $locale") {
                 [void]$eventReferencedFiles.Add($eventPath)
                 $eventDocument = Get-XmlDocument $eventPath "Mission$($record.Id) event $locale"
-                [void](Test-XamlDocument $eventDocument $eventPath "Mission$($record.Id) event $locale" 'Page')
+                [void](Test-XamlDocument $eventDocument $eventPath "Mission$($record.Id) event $locale" $eventRootName)
                 if ($locale -eq 'en' -and $null -ne $eventDocument) {
                     $body = Get-XmlText $eventDocument
                     if ([string]::IsNullOrWhiteSpace($body)) { Add-Failure "Mission$($record.Id) English event body is empty: $eventPath" }
@@ -615,7 +654,7 @@ foreach ($file in $allMissionFiles) {
         [void]$briefingAssetPaths.Add($briefingPath)
         $briefingDocument = Get-XmlDocument $briefingPath "$stem $locale briefing"
         if ($null -eq $briefingDocument) { continue }
-        [void](Test-XamlDocument $briefingDocument $briefingPath "$stem $locale briefing" 'Grid')
+        [void](Test-XamlDocument $briefingDocument $briefingPath "$stem $locale briefing" $briefingRootName)
         $briefingBody = $briefingDocument.DocumentElement.InnerText
         foreach ($heading in $requiredBriefingHeadings[$locale]) {
             if ($briefingBody -notmatch ('(?im)^\s*' + [regex]::Escape($heading) + '\s*$')) { Add-Failure "$stem $locale briefing is missing military-sim section '$heading'." }
@@ -698,7 +737,7 @@ foreach ($info in $operationInfos) {
     }
 
     foreach ($countLine in $mission) {
-        if ([string]$countLine -match '^\s*(NumberOf(?:Taskforce\d+(?:Submarines|Vessels|Aircraft|LandUnits)|Neutral(?:Vessels|Biologics)))\s*=\s*(.*)$') {
+        if ([string]$countLine -match $unitCountKeyPattern) {
             $countKey = $Matches[1]
             $count = Get-Integer $Matches[2] "$missionLabel $countKey" 0 999
             if ($null -ne $count) {
@@ -1013,10 +1052,9 @@ foreach ($info in $operationInfos) {
 
 # Environments are required for the configured main operations.  Their values are
 # parsed with invariant culture so malformed, NaN, and Infinity data cannot
-# pass through a locale dependent conversion.  M1-M3 retain the pre-existing
-# environment contract; the later authored environments add the explicit
-# conversion/background/wind fields.  Weather is intentionally descriptive
-# and is not a required field.
+# pass through a locale dependent conversion.  The manifest controls optional
+# date bounds and the sequence after which extended environment fields apply.
+# Weather is intentionally descriptive and is not a required field.
 foreach ($info in $mainOperations) {
     $ini = $info.Ini
     $label = $info.Stem
@@ -1032,7 +1070,11 @@ foreach ($info in $mainOperations) {
         $yearRule = Get-ManifestValue $environmentRules 'year'
         if ($null -ne $yearRule -and $year -ne [int]$yearRule) { Add-Failure "$label Environment Date must be in $yearRule." }
         if ($null -ne $year -and $null -ne $month -and $null -ne $day) {
-            try { [void][datetime]::new($year, $month, $day) } catch { Add-Failure "$label Environment Date is not a real calendar date." }
+            try {
+                $actualDate = [datetime]::new($year, $month, $day)
+                if ($null -ne $minimumEnvironmentDate -and $actualDate.Date -lt $minimumEnvironmentDate) { Add-Failure "$label Environment Date is earlier than the configured minimum $($minimumEnvironmentDate.ToString('yyyy-MM-dd'))." }
+                if ($null -ne $maximumEnvironmentDate -and $actualDate.Date -gt $maximumEnvironmentDate) { Add-Failure "$label Environment Date is later than the configured maximum $($maximumEnvironmentDate.ToString('yyyy-MM-dd'))." }
+            } catch { Add-Failure "$label Environment Date is not a real calendar date." }
         }
     }
     $time = Get-IniValue $environment 'Time'
@@ -1084,12 +1126,15 @@ foreach ($info in $operationInfos) {
     }
 }
 
-# If an installed game is available, gather unit IDs from its original data.
-# A missing installation is a warning because CI and Workshop authors often
-# validate the package without a local copy of the game.
+# If enabled by the manifest and an installed game is available, gather unit
+# IDs from its original data.  A missing installation is a warning because CI
+# and Workshop authors often validate the package without a local copy of the
+# game.
 $knownInstalledTypes = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-if ($GameRoot -and (Test-Path -LiteralPath $GameRoot -PathType Container)) {
-    $originalRoot = Join-Path $GameRoot 'Sea Power_Data\StreamingAssets\original'
+if (-not $unitIdValidationEnabled) {
+    # The campaign explicitly opted out of installed-game checks.
+} elseif ($GameRoot -and (Test-Path -LiteralPath $GameRoot -PathType Container)) {
+    $originalRoot = Join-Path $GameRoot ($unitIdOriginalRoot.Replace('/', '\'))
     if (Test-Path -LiteralPath $originalRoot -PathType Container) {
         foreach ($file in (Get-ChildItem -LiteralPath $originalRoot -Recurse -File -Filter '*.ini')) {
             [void]$knownInstalledTypes.Add(($file.BaseName -replace '_variants$',''))

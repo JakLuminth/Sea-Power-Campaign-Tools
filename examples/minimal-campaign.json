@@ -13,8 +13,10 @@
     "content": "briefing_content.json",
     "pathPattern": "campaigns/{campaignId}/missions/{stem}_briefing/BriefingText_{locale}.xml",
     "requiredFields": ["title", "description", "situation", "mission", "execution", "roe", "friendly", "support"],
+    "sectionFields": ["situation", "mission", "execution", "roe", "friendly", "support"],
     "requiredHeadings": {"en": ["SITUATION", "MISSION", "EXECUTION", "RULES OF ENGAGEMENT", "FRIENDLY FORCES", "SUPPORT"]},
     "labels": {"en": {"brief": "MISSION BRIEF", "footer": "FOLLOW TASKING", "situation": "SITUATION", "mission": "MISSION", "execution": "EXECUTION", "roe": "RULES OF ENGAGEMENT", "friendly": "FRIENDLY FORCES", "support": "SUPPORT"}},
+    "xaml": {"briefingRoot": "Grid", "eventRoot": "Page", "presentationNamespace": "http://schemas.microsoft.com/winfx/2006/xaml/presentation", "xamlNamespace": "http://schemas.microsoft.com/winfx/2006/xaml"},
     "branding": {"header": "EXAMPLE CAMPAIGN"}
   }
 }

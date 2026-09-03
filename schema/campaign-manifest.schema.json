@@ -26,14 +26,65 @@
       "properties": {
         "content": {"type": "string", "minLength": 1},
         "pathPattern": {"type": "string", "minLength": 1},
-        "requiredFields": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "uniqueItems": true},
+        "requiredFields": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}, "minItems": 1, "uniqueItems": true},
+        "sectionFields": {"type": "array", "items": {"type": "string", "minLength": 1, "pattern": "^[A-Za-z][A-Za-z0-9_]*$"}, "minItems": 1, "uniqueItems": true},
         "requiredHeadings": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string", "minLength": 1}}},
         "labels": {"type": "object", "additionalProperties": {"type": "object", "required": ["brief", "footer"], "additionalProperties": {"type": "string"}}},
+        "xaml": {
+          "type": "object",
+          "properties": {
+            "briefingRoot": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"},
+            "eventRoot": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$"},
+            "presentationNamespace": {"type": "string", "format": "uri"},
+            "xamlNamespace": {"type": "string", "format": "uri"}
+          },
+          "additionalProperties": true
+        },
         "branding": {"type": "object", "additionalProperties": true}
       },
       "additionalProperties": true
     },
-    "validation": {"type": "object", "additionalProperties": true}
+    "validation": {
+      "type": "object",
+      "properties": {
+        "campaign": {"type": "object", "additionalProperties": true},
+        "graph": {
+          "type": "object",
+          "properties": {
+            "requireAcyclic": {"type": "boolean"},
+            "forbidOptionalAncestorForMain": {"type": "boolean"},
+            "requireExpiryForOptional": {"type": "boolean"}
+          },
+          "additionalProperties": true
+        },
+        "dynamicRoster": {"type": "object", "additionalProperties": true},
+        "missions": {"type": "object", "additionalProperties": true},
+        "operations": {"type": "object", "additionalProperties": true},
+        "units": {"type": "object", "additionalProperties": true},
+        "environment": {
+          "type": "object",
+          "properties": {
+            "year": {"type": "integer"},
+            "extendedAfterSequence": {"type": "integer"},
+            "dateBounds": {
+              "type": "object",
+              "properties": {
+                "min": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                "max": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                "start": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                "end": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"}
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "variables": {"type": "object", "additionalProperties": true},
+        "unitIds": {"type": "object", "additionalProperties": true},
+        "inventory": {"type": "object", "additionalProperties": true}
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

@@ -267,6 +267,30 @@ try {
         Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)outside RepoRoot|Campaign root') 'Validator accepted a manifest path outside RepoRoot.'
     }
 
+    Invoke-Test 'manifest rejects campaign INI traversal' {
+        $fixture = New-Fixture 'manifest-ini-traversal'
+        $config = Get-FixtureConfig $fixture
+        Replace-Text $config '"ini"\s*:\s*"[^"]+"' '"ini": "..\\outside.ini"' 'manifest campaign INI'
+        $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', $config, '-GameRoot', '')
+        Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)Campaign INI path') 'Validator accepted a campaign INI path outside the campaign root.'
+    }
+
+    Invoke-Test 'manifest rejects duplicate locales' {
+        $fixture = New-Fixture 'manifest-duplicate-locale'
+        $config = Get-FixtureConfig $fixture
+        Replace-Text $config '"locales"\s*:\s*\["en",\s*"cn"' '"locales": ["en", "en"' 'manifest locale list'
+        $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', $config, '-GameRoot', '')
+        Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)duplicate locale') 'Validator accepted duplicate manifest locales.'
+    }
+
+    Invoke-Test 'manifest date bounds are enforced' {
+        $fixture = New-Fixture 'manifest-date-bounds'
+        $config = Get-FixtureConfig $fixture
+        Replace-Text $config '"max"\s*:\s*"[^"]+"' '"max": "1985-01-01"' 'manifest environment date maximum'
+        $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', $config, '-GameRoot', '')
+        Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)configured maximum') 'Validator did not enforce manifest environment date bounds.'
+    }
+
     Invoke-Test 'positive campaign validation' {
         $fixture = New-Fixture 'positive'
         $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', (Get-FixtureConfig $fixture), '-GameRoot', '')
@@ -373,6 +397,13 @@ try {
         [void]$skips.Add($message)
         Write-Output $message
     } else {
+        Invoke-Test 'generator rejects content path traversal' {
+            $fixture = New-Fixture 'generator-content-traversal'
+            $content = Join-Path $fixture ([System.IO.Path]::GetRelativePath($root, $jsonPath))
+            Replace-Text $content '"file"\s*:\s*"[^"]+"' '"file": "..\\escape"' 'briefing content file stem'
+            $result = Invoke-PwshFile $generator @('-RepoRoot', $fixture, '-Config', (Get-FixtureConfig $fixture))
+            Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)unsafe file stem') 'Generator accepted a briefing content path traversal.'
+        }
         Invoke-Test 'generator is deterministic and preserves gameplay sections' {
             $fixture = New-Fixture 'generator-integrated'
             $beforeSections = Get-MissionSectionSignature $fixture
