@@ -139,7 +139,7 @@ function New-BriefingXml([object]$Node, [string]$Locale) {
     }
 
     $cardText = $cards -join "`n"
-    return @"
+    $xml = @"
 <Grid xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Background="#101922" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
   <Grid.RowDefinitions>
     <RowDefinition Height="Auto" />
@@ -179,6 +179,9 @@ $cardText
   </Border>
 </Grid>
 "@
+    # Generated assets use LF consistently, independent of the checkout's
+    # PowerShell script line-ending convention.
+    return ($xml -replace "`r`n", "`n")
 }
 
 function Write-Utf8NoBom([string]$Path, [string]$Text) {
