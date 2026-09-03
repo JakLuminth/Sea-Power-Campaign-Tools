@@ -37,9 +37,18 @@ Required top-level values are `campaign`, `locales`, and `briefing`. The
 `campaign` object resolves package paths relative to the manifest and contains
 an ID, display name, campaign root, metadata path, campaigns root, and INI
 filename. `briefing` supplies the authored content JSON, path pattern, required
-fields/headings, and localized labels. The optional `validation` object holds
-campaign-specific declarative rules; omitted rules disable only those optional
-checks.
+fields/headings, localized labels, section fields, and XAML roots/namespaces.
+The optional `validation` object holds campaign-specific declarative rules:
+operation/event expectations and graph policy, dynamic-roster and formation
+policy, player-slot continuity/replenishment, variable naming, environment
+date bounds, optional inventory checks, and installed-game unit-ID policy.
+Omitted optional rules disable only those checks.
+
+The briefing content source is a JSON object with `schemaVersion: 1`, a
+`locales` list matching the manifest order, and a `missions` array. Each record
+has a unique `file` stem and `code`, plus a `briefings` object keyed by locale;
+each locale supplies every manifest `requiredFields`. The fixture command
+checks this contract before exercising the validator and generator.
 
 ## Adding a campaign
 
