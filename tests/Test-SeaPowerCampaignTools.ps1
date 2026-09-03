@@ -251,6 +251,22 @@ function Invoke-Test([string]$Name, [scriptblock]$Body) {
 
 New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
 try {
+    Invoke-Test 'manifest rejects unsupported schema version' {
+        $fixture = New-Fixture 'manifest-schema-version'
+        $config = Get-FixtureConfig $fixture
+        Replace-Text $config '"schemaVersion"\s*:\s*1' '"schemaVersion": 2' 'manifest schemaVersion'
+        $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', $config, '-GameRoot', '')
+        Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)schemaVersion') 'Validator accepted an unsupported manifest schema version.'
+    }
+
+    Invoke-Test 'manifest rejects paths outside repository' {
+        $fixture = New-Fixture 'manifest-path-traversal'
+        $config = Get-FixtureConfig $fixture
+        Replace-Text $config '"root"\s*:\s*"[^"]+"' '"root": "../../outside-campaign"' 'manifest campaign root'
+        $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', $config, '-GameRoot', '')
+        Assert-True ($result.ExitCode -ne 0 -and $result.Output -match '(?i)outside RepoRoot|Campaign root') 'Validator accepted a manifest path outside RepoRoot.'
+    }
+
     Invoke-Test 'positive campaign validation' {
         $fixture = New-Fixture 'positive'
         $result = Invoke-PwshFile $validator @('-RepoRoot', $fixture, '-Config', (Get-FixtureConfig $fixture), '-GameRoot', '')

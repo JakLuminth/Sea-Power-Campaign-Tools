@@ -56,7 +56,9 @@ function Convert-CampaignPath([string]$Path, [string]$Root) {
     # references before they are checked.
     if ([System.IO.Path]::IsPathRooted($normalized) -or $normalized -match '^[A-Za-z]:') { return $null }
     if ($normalized -match '[\x00-\x1F]') { return $null }
-    $prefixes = @('.\mod\campaigns\', '.\campaigns\', 'mod\campaigns\', 'campaigns\')
+    $campaignSegment = [System.IO.Path]::GetFileName($manifest.CampaignsRoot.TrimEnd('\'))
+    if ([string]::IsNullOrWhiteSpace($campaignSegment)) { $campaignSegment = 'campaigns' }
+    $prefixes = @('.\' + $campaignSegment + '\', $campaignSegment + '\', '.\mod\campaigns\', 'mod\campaigns\')
     $relative = $null
     foreach ($prefix in $prefixes) {
         if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -373,6 +375,7 @@ $dynamicFormationPrefix = [string](Get-ManifestValue $unitRules 'formationPrefix
 $replenishSequences = @(Get-ManifestList $unitRules 'replenishSequences')
 $persistentSlotRules = @(Get-ManifestList $unitRules 'persistentSlotRules')
 $variablePattern = [string](Get-ManifestValue $variableRules 'namePattern' '^[A-Za-z][A-Za-z0-9_]*$')
+$environmentExtendedAfterSequence = Get-ManifestValue $environmentRules 'extendedAfterSequence' 3
 $minimumDynamicUnits = [int](Get-ManifestValue $unitRules 'dynamicAnchorMinUnits' 1)
 $maximumDynamicUnits = [int](Get-ManifestValue $unitRules 'dynamicAnchorMaxUnits' 1)
 $mainSequencePattern = [string](Get-ManifestValue $missionRules 'mainSequencePattern' '^MISSION\s+(\d+)$')
@@ -382,8 +385,11 @@ $briefingPathPattern = [string](Get-ManifestValue $manifest.Briefing 'pathPatter
 if (-not (Require-File $campaignPath 'campaign definition')) { exit 1 }
 if (-not (Require-File $manifest.MetadataPath 'mod metadata')) { exit 1 }
 $enemyRosterValue = [string](Get-ManifestValue $validation 'enemyRoster' '')
+$requireEnemyRoster = [bool](Get-ManifestValue $validation 'requireEnemyRoster' ($false -or [bool]$enemyRosterValue))
 $enemyRosterPath = if ($enemyRosterValue) { Resolve-ManifestPath $enemyRosterValue $manifest.ManifestDirectory $repo } else { Join-Path $campaignRoot 'enemy_theater_roster.ini' }
-$enemyRosterIni = if ($null -ne $enemyRosterPath -and (Require-File $enemyRosterPath 'enemy DUG roster')) { Read-IniFile $enemyRosterPath } else { $null }
+if ($requireEnemyRoster -and $null -eq $enemyRosterPath) { Add-Failure 'Configured enemy DUG roster path is invalid.' }
+$enemyRosterIni = if ($null -ne $enemyRosterPath -and (Test-Path -LiteralPath $enemyRosterPath -PathType Leaf)) { Read-IniFile $enemyRosterPath } else { $null }
+if ($requireEnemyRoster -and $null -eq $enemyRosterIni) { [void](Require-File $enemyRosterPath 'enemy DUG roster') }
 $formationDefinitions = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 foreach ($formationSection in (Get-SectionNames $enemyRosterIni ([string](Get-ManifestValue $unitRules 'formationSectionPattern' '^Formation_.+')))) {
     $formationPrefix = [string](Get-ManifestValue $unitRules 'formationPrefix' 'Formation_')
@@ -1031,7 +1037,7 @@ foreach ($info in $mainOperations) {
         if ($timeMatch.Groups[3].Success) { [void](Get-Integer $timeMatch.Groups[3].Value "$label Environment Time second" 0 59) }
     }
     $sequenceNumber = Get-MissionSequenceNumber $info.Sequence
-    $extendedEnvironment = ($null -eq $sequenceNumber -or $sequenceNumber -gt 3)
+    $extendedEnvironment = ($null -eq $sequenceNumber -or ($null -ne $environmentExtendedAfterSequence -and $sequenceNumber -gt [int]$environmentExtendedAfterSequence))
     if ($extendedEnvironment) {
         foreach ($field in @('ConvertTimeToLocal','LoadBackgroundData')) {
             $value = Get-IniValue $environment $field
