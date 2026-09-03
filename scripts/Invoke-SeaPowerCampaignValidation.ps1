@@ -58,7 +58,14 @@ function Convert-CampaignPath([string]$Path, [string]$Root) {
     if ($normalized -match '[\x00-\x1F]') { return $null }
     $campaignSegment = [System.IO.Path]::GetFileName($manifest.CampaignsRoot.TrimEnd('\'))
     if ([string]::IsNullOrWhiteSpace($campaignSegment)) { $campaignSegment = 'campaigns' }
-    $prefixes = @('.\' + $campaignSegment + '\', $campaignSegment + '\', '.\mod\campaigns\', 'mod\campaigns\')
+    # Parenthesize concatenations so PowerShell does not fold the comma-separated
+    # expressions into one array/string value.
+    $prefixes = @(
+        ('.\' + $campaignSegment + '\')
+        ($campaignSegment + '\')
+        '.\mod\campaigns\'
+        'mod\campaigns\'
+    )
     $relative = $null
     foreach ($prefix in $prefixes) {
         if ($normalized.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
